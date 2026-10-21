@@ -1,0 +1,9 @@
+# Python sanal ortamı, uv oluşturur
+.venv/
+
+# Python'un ve pytest'in ürettiği önbellekler
+__pycache__/
+.pytest_cache/
+
+# Gerçek bağlantı bilgileri ve şifreler, şablonu .env.example
+.env
