@@ -4,9 +4,12 @@ file: conftest.py
 Testlerin ortak fixture'ları. Testler .env'deki adreslerle değil, bu
 adreslerin veritabanı adına _test eklenmiş haliyle çalışır. Testler tabloları
 kurup sildiği için adı _test ile bitmeyen bir veritabanına bağlanılacaksa test
-oturumu hiçbir şey yapmadan durur. Her test oturumu başında test veritabanı
-sıfırlanır ve en son sürüme getirilir. app_connection ve owner_connection'ın
-yaptığı her değişiklik test bitince geri alınır.
+oturumu hiçbir şey yapmadan durur. Veritabanı kullanan test klasörleri
+fresh_database'i kendi conftest'lerinde otomatik ister, böylece test
+veritabanı oturum başında bir kere sıfırlanıp en son sürüme getirilir.
+Birim testleri veritabanına hiç bağlanmaz. app_connection ve
+owner_connection'ın yaptığı her değişiklik test bitince geri alınır.
+Gerçekten commit eden testler clean_database ile temizlenir.
 
 description: Test veritabanının adresini üreten, onu koruyan ve sıfırlayan ortak fixture'lar.
 """
@@ -128,9 +131,16 @@ def app_engine(app_url: URL) -> Iterator[Engine]:
     engine.dispose()
 
 
+# anyio'nun pytest eklentisi asenkron testleri varsayılan olarak hem asyncio
+# hem trio ile çalıştırmaya çalışır. Proje sadece asyncio kullanıyor.
+@pytest.fixture(scope="session")
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 # Önceki bir oturum yarıda kesildiyse test veritabanı yarım bir sürümde
 # kalmış olabilir. Her oturum bu yüzden boş bir veritabanından başlar.
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def fresh_database(alembic_config: Config, migration_engine: Engine, settings: Settings) -> None:
     with migration_engine.begin() as connection:
         _become_owner(connection, settings)
@@ -157,3 +167,15 @@ def app_connection(app_engine: Engine) -> Iterator[Connection]:
     with app_engine.connect() as connection:
         yield connection
         connection.rollback()
+
+
+# İstekleri gerçekten commit eden uçtan uca testler için. Test bittikten sonra
+# migration'ların yüklediği para birimleri dışındaki bütün satırlar silinir.
+# Sıra yabancı anahtarlara göre: önce başkasını gösteren tablolar.
+@pytest.fixture
+def clean_database(migration_engine: Engine, settings: Settings) -> Iterator[None]:
+    yield
+    with migration_engine.begin() as connection:
+        _become_owner(connection, settings)
+        for table in ("company", "exchange_rate", "app_user"):
+            connection.execute(text(f"DELETE FROM {table}"))

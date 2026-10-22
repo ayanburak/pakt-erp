@@ -1,6 +1,6 @@
 """
 file: database.py
-importable: Base, AuditMixin, NAMING_CONVENTION
+importable: Base, AuditMixin, NAMING_CONVENTION, create_database_engine, create_session_factory
 
 Bütün SQLAlchemy tabloları Base'den türetilir. Base her tabloya veritabanının
 ürettiği bir id verir. Base.metadata, Alembic'in şemayı karşılaştırırken
@@ -8,14 +8,13 @@ baktığı tablo listesidir, bir tablonun bu listeye girmesi için modülünün
 Alembic çalışmadan önce import edilmiş olması gerekir. AuditMixin'i miras alan
 tablo, kaydı kimin ve ne zaman oluşturup değiştirdiğini tutan dört sütun
 kazanır. Böyle bir tablonun migration'ında set_updated_at tetikleyicisinin de
-kurulması gerekir, yoksa updated_at güncellenmez.
+kurulması gerekir, yoksa updated_at güncellenmez. Uygulama veritabanına
+create_database_engine ile kurulan engine ve create_session_factory ile
+kurulan oturum üreticisi üzerinden bağlanır.
 
-description: Bütün tabloların ortak tabanını, ortak sütunlarını ve kısıt isimlendirme kuralını tanımlar.
+description: Tabloların ortak tabanını, kısıt isimlendirme kuralını ve uygulamanın veritabanı bağlantısını tanımlar.
 """
 
-# TODO: Uygulamanın asenkron engine'i ve oturum üreticisi ilk repository ile
-# birlikte bu dosyaya eklenecek.
-#
 # NOTE: AuditMixin app_user tablosunu adıyla gösterir. Yani bu altyapı
 # dosyası identity modülünün tablo adına bağlıdır, app_user'ın adı
 # değişirse burası da değişmeli.
@@ -23,6 +22,7 @@ description: Bütün tabloların ortak tabanını, ortak sütunlarını ve kıs�
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, MetaData, func
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Kısıtlara isim PostgreSQL'e bırakılmaz. Bir migration bir kısıtı silmek ya
@@ -68,3 +68,36 @@ class AuditMixin:
     created_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id", ondelete="RESTRICT"), sort_order=101)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), sort_order=102)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id", ondelete="RESTRICT"), sort_order=103)
+
+
+# --- Bağlantı ---
+
+# pool_pre_ping, havuzdan alınan bağlantıyı kullanmadan önce yoklar. Sunucu
+# yeniden başlatılmışsa kopmuş bir bağlantı isteğe hata olarak yansımaz,
+# sessizce yenisiyle değiştirilir.
+def create_database_engine(url: str) -> AsyncEngine:
+    """Uygulamanın asenkron engine'ini kurar.
+
+    Args:
+        url: postgresql+psycopg ile başlayan bağlantı adresi.
+
+    Returns:
+        Bağlantı havuzunu yöneten engine. Uygulama kapanırken dispose() ile kapatılmalı.
+    """
+    return create_async_engine(url, pool_pre_ping=True)
+
+
+# expire_on_commit=False olmadan commit'ten sonra nesnelerin alanlarına
+# erişmek veritabanına yeni bir sorgu atmaya çalışır, asenkron oturumda bu
+# hata verir. Repository'ler nesneleri zaten entity'ye çevirip döndürdüğü
+# için bu ayarın bir yan etkisi yok.
+def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Verilen engine'e bağlı oturum üreticisini kurar.
+
+    Args:
+        engine: create_database_engine'in döndürdüğü engine.
+
+    Returns:
+        Her çağrıldığında yeni bir AsyncSession açan üretici.
+    """
+    return async_sessionmaker(engine, expire_on_commit=False)
