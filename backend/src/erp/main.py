@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+import erp.models  # noqa: F401  bütün tabloları Base.metadata'ya kaydeder
 from erp.config import Settings
 from erp.infrastructure.database import create_database_engine, create_session_factory
 from erp.modules.currency.api import router as currency_router
