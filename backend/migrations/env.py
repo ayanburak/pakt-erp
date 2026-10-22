@@ -17,15 +17,19 @@ description: Alembic'i projenin ayarlarıyla ve rol düzeniyle bağlayan giriş 
 # Tablo public'te olsaydı uygulama hangi sürümde olunduğu bilgisini
 # değiştirebilirdi. Uygulama rolünün alembic şemasına hiçbir yetkisi yoktur.
 #
-# TODO: Modüllerde tablolar yazılmaya başlanınca her modülün models.py dosyası
-# burada import edilmeli. Import edilmeyen bir modülün tabloları Base.metadata'ya
-# girmez ve autogenerate o tabloları hiç görmez.
+# XXX: Yeni bir modül tablo kazandığında models.py dosyası aşağıya eklenmeli.
+# Import edilmeyen bir modülün tabloları Base.metadata'ya girmez ve
+# autogenerate o tabloları hiç görmez, hatta var olan tabloları silmeyi
+# önerebilir.
 
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import Connection, create_engine, pool, text
 
+import erp.modules.currency.models  # noqa: F401  tabloları Base.metadata'ya kaydetmek için
+import erp.modules.identity.models  # noqa: F401
+import erp.modules.organization.models  # noqa: F401
 from erp.config import Settings
 from erp.infrastructure.database import Base
 
